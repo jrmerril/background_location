@@ -233,6 +233,11 @@ class LocationUpdatesService : Service() {
     }
 
     private fun createLocationRequest(distanceFilter: Double) {
+        // Modern Google Play services API:
+        // - setIntervalMillis (desired interval)
+        // - setMinUpdateIntervalMillis (fastest interval)
+        // - setPriority via Priority.*
+        // - setMinUpdateDistanceMeters for displacement
         mLocationRequest = GmsLocationRequest.Builder(UPDATE_INTERVAL_IN_MILLISECONDS)
             .setMinUpdateIntervalMillis(FASTEST_UPDATE_INTERVAL_IN_MILLISECONDS)
             .setPriority(Priority.PRIORITY_HIGH_ACCURACY)
@@ -278,7 +283,8 @@ class LocationUpdatesService : Service() {
 }
 
 /**
- * Minimal helper used by the services.
+ * Minimal helper to satisfy calls to Utils.* from the services.
+ * Adds a 'requestingLocationUpdates(context)' alias for older call-sites.
  */
 object Utils {
     private const val PREFS = "background_location_prefs"
@@ -295,6 +301,7 @@ object Utils {
         return prefs.getBoolean(KEY_REQUESTING_LOCATION_UPDATES, false)
     }
 
+    // Alias expected by BackgroundLocationService.kt
     @JvmStatic
     fun requestingLocationUpdates(context: Context): Boolean =
         isRequestingLocationUpdates(context)
