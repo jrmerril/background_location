@@ -2,20 +2,25 @@ package com.almoullim.background_location
 
 import android.annotation.SuppressLint
 import android.app.*
-import android.location.*
-import android.location.LocationListener
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ServiceInfo
+import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
 import android.os.*
 import androidx.core.app.NotificationCompat
-import androidx.core.content.ContextCompat
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
-import com.google.android.gms.location.*
-import com.google.android.gms.location.LocationRequest
-import com.google.android.gms.common.*
+import com.google.android.gms.common.ConnectionResult
+import com.google.android.gms.common.GoogleApiAvailability
+import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationResult
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.android.gms.location.LocationRequest as GmsLocationRequest
 
 class LocationUpdatesService : Service() {
 
@@ -36,7 +41,7 @@ class LocationUpdatesService : Service() {
 
     private val mBinder = LocalBinder()
     private var mNotificationManager: NotificationManager? = null
-    private var mLocationRequest: LocationRequest? = null
+    private var mLocationRequest: GmsLocationRequest? = null
     private var mFusedLocationClient: FusedLocationProviderClient? = null
     private var mLocationManager: LocationManager? = null
     private var mFusedLocationCallback: LocationCallback? = null
@@ -64,31 +69,31 @@ class LocationUpdatesService : Service() {
         private const val STOP_SERVICE = "stop_service"
     }
 
-
     private val notification: NotificationCompat.Builder
         @SuppressLint("UnspecifiedImmutableFlag")
         get() {
-
             val intent = Intent(this, getMainActivityClass(this))
             intent.putExtra(EXTRA_STARTED_FROM_NOTIFICATION, true)
             intent.action = "Localisation"
-            //intent.setClass(this, getMainActivityClass(this))
+
             val pendingIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                PendingIntent.getActivity(this, 1, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+                PendingIntent.getActivity(
+                    this, 1, intent,
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                )
             } else {
                 PendingIntent.getActivity(this, 1, intent, PendingIntent.FLAG_UPDATE_CURRENT)
             }
 
-
             val builder = NotificationCompat.Builder(this, "BackgroundLocation")
-                    .setContentTitle(NOTIFICATION_TITLE)
-                    .setOngoing(true)
-                    .setSound(null)
-                    .setPriority(NotificationCompat.PRIORITY_HIGH)
-                    .setSmallIcon(resources.getIdentifier(NOTIFICATION_ICON, "mipmap", packageName))
-                    .setWhen(System.currentTimeMillis())
-                    .setStyle(NotificationCompat.BigTextStyle().bigText(NOTIFICATION_MESSAGE))
-                    .setContentIntent(pendingIntent)
+                .setContentTitle(NOTIFICATION_TITLE)
+                .setOngoing(true)
+                .setSound(null)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setSmallIcon(resources.getIdentifier(NOTIFICATION_ICON, "mipmap", packageName))
+                .setWhen(System.currentTimeMillis())
+                .setStyle(NotificationCompat.BigTextStyle().bigText(NOTIFICATION_MESSAGE))
+                .setContentIntent(pendingIntent)
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 builder.setChannelId(CHANNEL_ID)
@@ -102,17 +107,14 @@ class LocationUpdatesService : Service() {
     override fun onCreate() {
         val googleAPIAvailability = GoogleApiAvailability.getInstance()
             .isGooglePlayServicesAvailable(applicationContext)
-        
+
         isGoogleApiAvailable = googleAPIAvailability == ConnectionResult.SUCCESS
-        
 
         if (isGoogleApiAvailable && !this.forceLocationManager) {
             mFusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
-            
+
             mFusedLocationCallback = object : LocationCallback() {
                 override fun onLocationResult(locationResult: LocationResult) {
-                    // Smart cast to 'Location' is impossible, because 'locationResult.lastLocation'
-                    // is a property that has open or custom getter
                     val newLastLocation = locationResult.lastLocation
                     if (newLastLocation is Location) {
                         super.onLocationResult(locationResult)
@@ -151,27 +153,32 @@ class LocationUpdatesService : Service() {
             }
         }
 
-        val filter = IntentFilter()
-        filter.addAction(STOP_SERVICE)
-        if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(broadcastReceiver, filter, RECEIVER_EXPORTED)
+        val filter = IntentFilter().apply { addAction(STOP_SERVICE) }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(broadcastReceiver, filter, Context.RECEIVER_EXPORTED)
         } else {
             registerReceiver(broadcastReceiver, filter)
         }
 
-
-        updateNotification() // to start the foreground service
+        updateNotification() // start the foreground service
     }
-
 
     fun requestLocationUpdates() {
         Utils.setRequestingLocationUpdates(this, true)
         try {
             if (isGoogleApiAvailable && !this.forceLocationManager) {
-                mFusedLocationClient!!.requestLocationUpdates(mLocationRequest!!,
-                    mFusedLocationCallback!!, Looper.myLooper())
+                mFusedLocationClient!!.requestLocationUpdates(
+                    mLocationRequest!!,
+                    mFusedLocationCallback!!,
+                    Looper.myLooper()
+                )
             } else {
-                mLocationManager?.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0L, 0f, mLocationManagerCallback!!)
+                mLocationManager?.requestLocationUpdates(
+                    LocationManager.GPS_PROVIDER,
+                    0L,
+                    0f,
+                    mLocationManagerCallback!!
+                )
             }
         } catch (unlikely: SecurityException) {
             Utils.setRequestingLocationUpdates(this, false)
@@ -181,12 +188,15 @@ class LocationUpdatesService : Service() {
     fun updateNotification() {
         if (!isStarted) {
             isStarted = true
-            if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                startForeground(NOTIFICATION_ID, notification.build(), ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                startForeground(
+                    NOTIFICATION_ID,
+                    notification.build(),
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+                )
             } else {
                 startForeground(NOTIFICATION_ID, notification.build())
             }
-
         } else {
             val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.notify(NOTIFICATION_ID, notification.build())
@@ -198,20 +208,20 @@ class LocationUpdatesService : Service() {
         stopSelf()
     }
 
-
     private fun getLastLocation() {
         try {
-            if(isGoogleApiAvailable && !this.forceLocationManager) {
+            if (isGoogleApiAvailable && !this.forceLocationManager) {
                 mFusedLocationClient!!.lastLocation
-                        .addOnCompleteListener { task ->
-                            if (task.isSuccessful && task.result != null) {
-                                mLocation = task.result
-                            }
+                    .addOnCompleteListener { task ->
+                        if (task.isSuccessful && task.result != null) {
+                            mLocation = task.result
                         }
+                    }
             } else {
                 mLocation = mLocationManager!!.getLastKnownLocation(LocationManager.GPS_PROVIDER)
             }
         } catch (unlikely: SecurityException) {
+            // ignore
         }
     }
 
@@ -222,21 +232,18 @@ class LocationUpdatesService : Service() {
         LocalBroadcastManager.getInstance(applicationContext).sendBroadcast(intent)
     }
 
-
     private fun createLocationRequest(distanceFilter: Double) {
-        mLocationRequest = LocationRequest()
-        mLocationRequest!!.interval = UPDATE_INTERVAL_IN_MILLISECONDS
-        mLocationRequest!!.fastestInterval = FASTEST_UPDATE_INTERVAL_IN_MILLISECONDS
-        mLocationRequest!!.priority = LocationRequest.PRIORITY_HIGH_ACCURACY
-        mLocationRequest!!.smallestDisplacement = distanceFilter.toFloat()
+        mLocationRequest = GmsLocationRequest.Builder(UPDATE_INTERVAL_IN_MILLISECONDS)
+            .setMinUpdateIntervalMillis(FASTEST_UPDATE_INTERVAL_IN_MILLISECONDS)
+            .setPriority(Priority.PRIORITY_HIGH_ACCURACY)
+            .setMinUpdateDistanceMeters(distanceFilter.toFloat())
+            .build()
     }
-
 
     inner class LocalBinder : Binder() {
         internal val service: LocationUpdatesService
             get() = this@LocationUpdatesService
     }
-
 
     override fun onDestroy() {
         super.onDestroy()
@@ -268,4 +275,27 @@ class LocationUpdatesService : Service() {
             null
         }
     }
+}
+
+/**
+ * Minimal helper used by the services.
+ */
+object Utils {
+    private const val PREFS = "background_location_prefs"
+    private const val KEY_REQUESTING_LOCATION_UPDATES = "requesting_location_updates"
+
+    fun setRequestingLocationUpdates(context: Context, requesting: Boolean) {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        prefs.edit().putBoolean(KEY_REQUESTING_LOCATION_UPDATES, requesting).apply()
+    }
+
+    @JvmStatic
+    fun isRequestingLocationUpdates(context: Context): Boolean {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        return prefs.getBoolean(KEY_REQUESTING_LOCATION_UPDATES, false)
+    }
+
+    @JvmStatic
+    fun requestingLocationUpdates(context: Context): Boolean =
+        isRequestingLocationUpdates(context)
 }
